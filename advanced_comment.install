@@ -1,0 +1,18 @@
+<?php
+// $Id: advanced_comment.install,v 1.1.2.4 2010/05/31 18:29:06 snufkin Exp $
+
+/**
+ * @file
+ * Install hooks for Advanced Comment.
+ */
+
+/**
+ * Implements hook_uninstall().
+ *
+ * Remove all settings and variables that the module has set.
+ */
+function advanced_comment_uninstall() {
+  db_query('DELETE FROM {variable} WHERE name LIKE "advanced_comment_%"');
+  cache_clear_all('variables', 'cache');
+}
+

@@ -1,0 +1,175 @@
+<?php
+// $Id: advanced_comment.module,v 1.1.2.17 2010/05/31 18:29:06 snufkin Exp $
+/**
+ * @file
+ * Module enhances the core comment features.
+ **/
+
+/**
+ * Implementation of hook_menu().
+ */
+function advanced_comment_menu() {
+  $items = array();
+
+  $items['admin/content/comment/advanced_comment'] = array(
+    'title' => 'Advanced Comment settings',
+    'description' => 'Configure the advanced comment module.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('advanced_comment_admin_form'),
+    'access arguments' => array('administer advanced_comment'),
+    'file' => 'advanced_comment.admin.inc',
+    'weight' => 10,
+  );
+
+  return $items;
+}
+
+/**
+ * Implementation of hook_perm().
+ */
+function advanced_comment_perm() {
+  return array('administer advanced_comment', 'edit own comments');
+}
+
+/**
+ * Implementation of hook_menu_alter().
+ *
+ * Use our own access callback to remove the edit callback if the node has
+ * been set to flat commenting.
+ */
+function advanced_comment_menu_alter(&$items) {
+  $items['comment/edit']['access callback'] = 'advanced_comment_edit_access';
+}
+
+/**
+ * Access callback on comment/edit paths.
+ *
+ * @see advanced_comment_link_alter()
+ */
+function advanced_comment_edit_access($op) {
+  if (arg(0) != 'comment' || arg(1) != 'edit'|| !(user_access('edit own comments') || user_access('administer comments'))) {
+    // Do not even try to do anything if we're NOT on a comment edit form,
+    // since we cannot know the comment ID we need. The link is actually
+    // removed in advanced_comment_link_alter() anyway.
+    return FALSE;
+  }
+  // Code borrowed from comment_edit(), but has our own checks inserted.
+  $comment = db_fetch_object(db_query('SELECT c.*, u.uid, u.name AS registered_name, u.data FROM {comments} c INNER JOIN {users} u ON c.uid = u.uid WHERE c.cid = %d', arg(2)));
+  $node = node_load($comment->nid);
+  if (!user_access('administer comments') && $node->advanced_comment['edit_link'] && (COMMENT_MODE_FLAT_COLLAPSED == $node->comment || COMMENT_MODE_FLAT_EXPANDED == $node->comment)) {
+    return FALSE;
+  }
+  $comment = drupal_unpack($comment);
+  $comment->name = $comment->uid ? $comment->registered_name : $comment->name;
+  return comment_access('edit', $comment);
+}
+
+/**
+ * Implementation of hook_link_alter().
+ *
+ * Note: The $comment object will only be available in Drupal 6.17.
+ * See http://drupal.org/node/374463 for more info.
+ */
+function advanced_comment_link_alter(&$links, $node, $comment = NULL) {
+  // Hide the reply link if flat listing is enabled. Valid for every user.
+  if ($node->advanced_comment['reply_link'] && (COMMENT_MODE_FLAT_COLLAPSED == $node->comment || COMMENT_MODE_FLAT_EXPANDED == $node->comment)) {
+    unset($links['comment_reply']);
+  }
+  // Hide the edit link if flat listing is enabled. Valid for all users without administer comment permission.
+  if (!user_access('administer comments') && $node->advanced_comment['edit_link'] && (COMMENT_MODE_FLAT_COLLAPSED == $node->comment || COMMENT_MODE_FLAT_EXPANDED == $node->comment)) {
+    unset($links['comment_edit']);
+  }
+  // Introducing new edit own comment permission, hide edit link if the user doesn't have proper access.
+  if (!(user_access('edit own comments') || user_access('administer comments'))) {
+    unset($links['comment_edit']);
+  }
+}
+
+/**
+ * Implementation of hook_nodeapi().
+ */
+function advanced_comment_nodeapi(&$node, $op, $teaser = NULL, $page = NULL) {
+  switch ($op) {
+    case 'load':
+      if (!isset($node->advanced_comment)) {
+        $node->advanced_comment['reply_link'] = variable_get('advanced_comment_reply_link_' . $node->type, 0);
+        $node->advanced_comment['edit_link'] = variable_get('advanced_comment_edit_link_' . $node->type, 0);
+        $node->advanced_comment['delete_link'] = variable_get('advanced_comment_delete_link_' . $node->type, 0);
+      }
+      break;
+  }
+}
+
+/**
+ * Implementation of hook_form_alter().
+ */
+function advanced_comment_form_alter(&$form, $form_state, $form_id) {
+  // If its a new node type form we just override all the default options.
+  if ('node_type_form' == $form_id && isset($form['identity']['type'])) {
+    $form['advanced_comment'] = array(
+      '#type' => 'fieldset',
+      '#title' => t('Advanced comment settings'),
+      '#collapsible' => TRUE,
+      '#collapsed' => TRUE,
+    );
+
+    // The default value for these fields will be overwritten in case its a new node type form.
+    $form['advanced_comment']['advanced_comment_reply_link'] = array(
+      '#title' => t('Hide reply link on flat lists'),
+      '#type' => 'checkbox',
+      '#default_value' => variable_get('advanced_comment_reply_link_' . $form['#node_type']->type, 0),
+    );
+    $form['advanced_comment']['advanced_comment_edit_link'] = array(
+      '#title' => t('Hide edit link on flat lists'),
+      '#type' => 'checkbox',
+      '#default_value' => variable_get('advanced_comment_edit_link_' . $form['#node_type']->type, 0),
+    );
+    /*
+    * In Drupal 6.17 only.
+    $form['advanced_comment']['advanced_comment_delete_link'] = array(
+      '#title' => t('Show delete link only on the latest comment in flat lists'),
+      '#type' => 'checkbox',
+      '#default_value' => variable_get('advanced_comment_delete_link_' . $form['#node_type']->type, 0),
+    );
+    */
+
+    // New node type form, we overwrite the defaults.
+    if (empty($form['#node_type']->type)) {
+      // Populate the default value for the core comment form.
+      $defaults = variable_get('advanced_comment_core_defaults_comment', advanced_comment_core_defaults());
+      foreach (element_children($form['comment']) as $comment_form) {
+        $form['comment'][$comment_form]['#default_value'] = $defaults[$comment_form];
+      }
+      // Now pre-populate the defaults of the advanced comment form that was added in the previous section.
+      $defaults = variable_get('advanced_comment_custom_defaults', advanced_comment_custom_defaults());
+      foreach (element_children($form['advanced_comment']) as $advanced_comment_form) {
+        $form['advanced_comment'][$advanced_comment_form]['#default_value'] = $defaults[$advanced_comment_form];
+      }
+    }
+  }
+}
+
+/**
+ * Define our "sane" default fallback options for the default comment settings form.
+ */
+function advanced_comment_core_defaults() {
+  return array(
+    'comment' => COMMENT_NODE_READ_WRITE, // Default.
+    'comment_default_mode' => COMMENT_MODE_THREADED_EXPANDED, // Default.
+    'comment_default_order' => COMMENT_ORDER_OLDEST_FIRST, // Default.
+    'comment_default_per_page' => 50, // Default.
+    'comment_controls' => COMMENT_CONTROLS_HIDDEN, // Default.
+    'comment_anonymous' => COMMENT_ANONYMOUS_MAYNOT_CONTACT, //  Default.
+    'comment_subject_field' => 0, // Disabled, override.
+    'comment_preview' => COMMENT_PREVIEW_OPTIONAL, // Override.
+    'comment_form_location' => COMMENT_FORM_BELOW, // Override.
+  );
+}
+
+function advanced_comment_custom_defaults() {
+  return array(
+    'reply_link' => FALSE,
+    'edit_link' => FALSE,
+    'delete_link' => FALSE,
+  );
+}

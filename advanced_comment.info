@@ -1,0 +1,6 @@
+; $Id: advanced_comment.info,v 1.1 2010/03/28 00:09:15 snufkin Exp $
+name = Advanced Comment
+description = Enhancing the core comment features 
+
+core = 6.x
+dependencies[] = comment
