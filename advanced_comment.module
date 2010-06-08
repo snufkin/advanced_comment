@@ -189,6 +189,5 @@ function advanced_comment_custom_defaults() {
  *   Boolean, TRUE if listing is flat, FALSE if its threaded.
  */
 function _advanced_comment_is_flat($mode) {
-  return $node->comment == COMMENT_MODE_FLAT_COLLAPSED || $node->comment == COMMENT_MODE_FLAT_EXPANDED;
+  return $mode == COMMENT_MODE_FLAT_COLLAPSED || $mode == COMMENT_MODE_FLAT_EXPANDED;
 }
-
