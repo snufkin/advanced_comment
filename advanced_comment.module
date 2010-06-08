@@ -56,7 +56,8 @@ function advanced_comment_edit_access($op) {
   // Code borrowed from comment_edit(), but has our own checks inserted.
   $comment = db_fetch_object(db_query('SELECT c.*, u.uid, u.name AS registered_name, u.data FROM {comments} c INNER JOIN {users} u ON c.uid = u.uid WHERE c.cid = %d', arg(2)));
   $node = node_load($comment->nid);
-  if (!user_access('administer comments') && $node->advanced_comment['edit_link'] && _advanced_comment_is_flat($node->comment)) {
+  $mode = _comment_get_display_setting('mode', $node);
+  if (!user_access('administer comments') && $node->advanced_comment['edit_link'] && _advanced_comment_is_flat($mode)) {
     return FALSE;
   }
   $comment = drupal_unpack($comment);
@@ -71,12 +72,13 @@ function advanced_comment_edit_access($op) {
  * See http://drupal.org/node/374463 for more info.
  */
 function advanced_comment_link_alter(&$links, $node, $comment = NULL) {
+  $mode = _comment_get_display_setting('mode', $node);
   // Hide the reply link if flat listing is enabled. Valid for every user.
-  if ($node->advanced_comment['reply_link'] && _advanced_comment_is_flat($node->comment)) {
+  if ($node->advanced_comment['reply_link'] && _advanced_comment_is_flat($mode)) {
     unset($links['comment_reply']);
   }
   // Hide the edit link if flat listing is enabled. Valid for all users without administer comment permission.
-  if (!user_access('administer comments') && $node->advanced_comment['edit_link'] && _advanced_comment_is_flat($node->comment)) {
+  if (!user_access('administer comments') && $node->advanced_comment['edit_link'] && _advanced_comment_is_flat($mode)) {
     unset($links['comment_edit']);
   }
   // Introducing new edit own comment permission, hide edit link if the user doesn't have proper access.
@@ -85,7 +87,7 @@ function advanced_comment_link_alter(&$links, $node, $comment = NULL) {
   }
   
   // Show delete link only on the "last" comment on a flat list.
-  if ($node->advanced_comment['delete_link'] && _advanced_comment_is_flat($node->comment)) {
+  if ($node->advanced_comment['delete_link'] && _advanced_comment_is_flat($mode)) {
     // If its newest on top we can do it easily.
     // If oldest, then we'll need to dig into the database to see which comment was last and trigger when we're at that one.
   }
@@ -184,7 +186,7 @@ function advanced_comment_custom_defaults() {
  * Determine if a given node is set to flat comment listing.
  * 
  * @param $mode
- *   The mode from $node->comment.
+ *   The mode from $mode = _comment_get_display_setting('mode', $node);.
  * @return
  *   Boolean, TRUE if listing is flat, FALSE if its threaded.
  */
