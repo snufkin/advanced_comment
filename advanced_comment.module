@@ -191,3 +191,4 @@ function advanced_comment_custom_defaults() {
 function _advanced_comment_is_flat($mode) {
   return $node->comment == COMMENT_MODE_FLAT_COLLAPSED || $node->comment == COMMENT_MODE_FLAT_EXPANDED;
 }
+
