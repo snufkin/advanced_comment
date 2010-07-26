@@ -1,5 +1,5 @@
 <?php
-// $Id: advanced_comment.module,v 1.1.2.18 2010/06/08 12:28:21 snufkin Exp $
+// $Id: advanced_comment.module,v 1.1.2.19 2010/07/26 11:45:16 snufkin Exp $
 /**
  * @file
  * Module enhances the core comment features.
@@ -123,7 +123,7 @@ function advanced_comment_link_alter(&$links, $node, $comment = NULL) {
   // 'administer comments' permission to delete comments. This module adds the delete link
   // to their own comments for users with the 'delete own comment' permission.
   global $user;
-  if (advanced_comment_delete_access('delete', $comment)) {
+  if (advanced_comment_delete_access('delete', $comment) && node_comment_mode($comment->nid) == COMMENT_NODE_READ_WRITE) {
     $links['comment_delete'] = array(
       'title' => t('delete'),
       'href' => "comment/delete/$comment->cid",
