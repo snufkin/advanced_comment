@@ -1,5 +1,5 @@
 <?php
-// $Id: advanced_comment.module,v 1.1.2.17 2010/05/31 18:29:06 snufkin Exp $
+// $Id: advanced_comment.module,v 1.1.2.18 2010/06/08 12:28:21 snufkin Exp $
 /**
  * @file
  * Module enhances the core comment features.
@@ -28,7 +28,7 @@ function advanced_comment_menu() {
  * Implementation of hook_perm().
  */
 function advanced_comment_perm() {
-  return array('administer advanced_comment', 'edit own comments');
+  return array('administer advanced_comment', 'edit own comments', 'delete own comments');
 }
 
 /**
@@ -39,6 +39,7 @@ function advanced_comment_perm() {
  */
 function advanced_comment_menu_alter(&$items) {
   $items['comment/edit']['access callback'] = 'advanced_comment_edit_access';
+  $items['comment/delete']['access callback'] = 'advanced_comment_delete_access';
 }
 
 /**
@@ -47,7 +48,7 @@ function advanced_comment_menu_alter(&$items) {
  * @see advanced_comment_link_alter()
  */
 function advanced_comment_edit_access($op) {
-  if (arg(0) != 'comment' || arg(1) != 'edit'|| !(user_access('edit own comments') || user_access('administer comments'))) {
+  if (arg(0) != 'comment' && arg(1) != 'edit'|| !(user_access('edit own comments') || user_access('administer comments'))) {
     // Do not even try to do anything if we're NOT on a comment edit form,
     // since we cannot know the comment ID we need. The link is actually
     // removed in advanced_comment_link_alter() anyway.
@@ -57,12 +58,42 @@ function advanced_comment_edit_access($op) {
   $comment = db_fetch_object(db_query('SELECT c.*, u.uid, u.name AS registered_name, u.data FROM {comments} c INNER JOIN {users} u ON c.uid = u.uid WHERE c.cid = %d', arg(2)));
   $node = node_load($comment->nid);
   $mode = _comment_get_display_setting('mode', $node);
+
+  // The setting 'Hide edit link on flat lists' is superior to the permission check.
   if (!user_access('administer comments') && $node->advanced_comment['edit_link'] && _advanced_comment_is_flat($mode)) {
     return FALSE;
   }
-  $comment = drupal_unpack($comment);
-  $comment->name = $comment->uid ? $comment->registered_name : $comment->name;
-  return comment_access('edit', $comment);
+
+  // Replicating comment_access, but adding access check against the new edit permission too.
+  global $user;
+  return (($user->uid && $user->uid == $comment->uid && comment_num_replies($comment->cid) == 0 && user_access('edit own comments')) || user_access('administer comments'));
+}
+
+/**
+ * Access callback for comment/delete.
+ *
+ * @see advanced_comment_link_alter().
+ */
+function advanced_comment_delete_access($op, $comment = NULL) {
+  // If no comment object is available and we are not even on the delete form we deny access,
+  // otherwise we have no way of knowing what comment we are looking at.
+  if (empty($comment) && !(arg(0) == 'comment' && arg(1) == 'delete' && is_numeric(arg(2)))) {
+    return FALSE;
+  }
+
+  // Load the comment, we are on the comment/delete/%comment path.
+  if (empty($comment)) {
+    $comment = db_fetch_object(db_query('SELECT c.*, u.name AS registered_name, u.uid FROM {comments} c INNER JOIN {users} u ON u.uid = c.uid WHERE c.cid = %d', arg(2)));
+  }
+  // Comment exists.
+  if (is_object($comment) && is_numeric($comment->cid)) {
+    // Replicating comment_access, but adding access check against the new delete permission too.
+    global $user;
+    return (($user->uid && $user->uid == $comment->uid && comment_num_replies($comment->cid) == 0 && user_access('delete own comments')) || user_access('administer comments'));
+  }
+  else {
+    return FALSE;
+  }
 }
 
 /**
@@ -70,6 +101,8 @@ function advanced_comment_edit_access($op) {
  *
  * Note: The $comment object is only available in Drupal 6.17.
  * See http://drupal.org/node/374463 for more info.
+ *
+ * Hide reply, edit and delete links according to settings and permissions.
  */
 function advanced_comment_link_alter(&$links, $node, $comment = NULL) {
   $mode = _comment_get_display_setting('mode', $node);
@@ -81,15 +114,20 @@ function advanced_comment_link_alter(&$links, $node, $comment = NULL) {
   if (!user_access('administer comments') && $node->advanced_comment['edit_link'] && _advanced_comment_is_flat($mode)) {
     unset($links['comment_edit']);
   }
-  // Introducing new edit own comment permission, hide edit link if the user doesn't have proper access.
+  // Introducing new edit own comment permission. Hide the edit link if the user doesn't have proper access.
   if (!(user_access('edit own comments') || user_access('administer comments'))) {
     unset($links['comment_edit']);
   }
-  
-  // Show delete link only on the "last" comment on a flat list.
-  if ($node->advanced_comment['delete_link'] && _advanced_comment_is_flat($mode)) {
-    // If its newest on top we can do it easily.
-    // If oldest, then we'll need to dig into the database to see which comment was last and trigger when we're at that one.
+
+  // Introducing new delete own comment permission. By default core only allows users with the
+  // 'administer comments' permission to delete comments. This module adds the delete link
+  // to their own comments for users with the 'delete own comment' permission.
+  global $user;
+  if (advanced_comment_delete_access('delete', $comment)) {
+    $links['comment_delete'] = array(
+      'title' => t('delete'),
+      'href' => "comment/delete/$comment->cid",
+    );
   }
 }
 
